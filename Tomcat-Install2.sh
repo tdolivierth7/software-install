@@ -2,7 +2,6 @@
 # ----------------------------------------
 # Install and Configure Apache Tomcat on OS: Ubuntu 24.04
 # ----------------------------------------
-sudo su
 apt-get update -y
 apt-get upgrade -y
 
