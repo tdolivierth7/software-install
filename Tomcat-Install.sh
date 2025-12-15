@@ -1,50 +1,51 @@
 #!/bin/bash
-# ----------------------------------------
-# Install and Configure Apache Tomcat on OS: Ubuntu 24.04
-# ----------------------------------------
-apt-get update -y
-apt-get upgrade -y
+
+set -euxo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
 # Install Java (Tomcat needs Java)
-apt-get install -y openjdk-17-jdk wget curl tar
+echo "=== Step 1: Install Java on Ubuntu 24.04 ==="
+apt-get update -y
+apt-get install -y openjdk-17-jdk wget tar
 
-# Set JAVA_HOME
-JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-echo "JAVA_HOME=${JAVA_HOME}" >> /etc/environment
-source /etc/environment
+echo "=== Step 2: Create a Tomcat user ==="
+id tomcat >/dev/null 2>&1 || useradd -m -U -d /opt/tomcat -s /bin/false tomcat
+
+echo "=== Step 3: Install Tomcat on Ubuntu ==="
+TOMCAT_VERSION="10.1.24"
+TOMCAT_TGZ="apache-tomcat-${TOMCAT_VERSION}.tar.gz"
 
 # Download Tomcat (latest stable Tomcat 10.x)
-cd /opt
-wget https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.48/bin/apache-tomcat-10.1.48.tar.gz
+# Prefer official CDN; fallback to archive if needed
+cd /tmp
+wget -q "https://dlcdn.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/${TOMCAT_TGZ}" \
+  || wget -q "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/${TOMCAT_TGZ}"
 
-# Extract and rename
-tar xzvf apache-tomcat-10.1.48.tar.gz
-mv apache-tomcat-10.1.48 tomcat
-rm apache-tomcat-10.1.48.tar.gz
+mkdir -p /opt/tomcat
+
+# Extract into /opt/tomcat (strip the top-level folder)
+tar -xzf "/tmp/${TOMCAT_TGZ}" -C /opt/tomcat --strip-components=1
 
 # Set permissions
-chown -R ubuntu:ubuntu /opt/tomcat
-chmod +x /opt/tomcat/bin/*.sh
+echo "=== Step 4: Update permissions of Tomcat ==="
+chown -R tomcat:tomcat /opt/tomcat
+chmod -R u+x /opt/tomcat/bin
 
-# Create systemd service
-cat <<EOF >/etc/systemd/system/tomcat.service
+# Configure Tomcat service
+echo "=== Step 5: Configure Tomcat as a service ==="
+cat >/etc/systemd/system/tomcat.service <<'EOF'
 [Unit]
-Description=Apache Tomcat 10 Web Application Container
+Description=Apache Tomcat Web Application Container
 After=network.target
 
 [Service]
-Type=forking
-
-User=ubuntu
-Group=ubuntu
-
-Environment=JAVA_HOME=${JAVA_HOME}
-Environment=CATALINA_HOME=/opt/tomcat
-Environment=CATALINA_BASE=/opt/tomcat
-
-ExecStart=/opt/tomcat/bin/startup.sh
-ExecStop=/opt/tomcat/bin/shutdown.sh
-
+Type=simple
+User=tomcat
+Group=tomcat
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+Environment="CATALINA_HOME=/opt/tomcat"
+Environment="CATALINA_BASE=/opt/tomcat"
+ExecStart=/opt/tomcat/bin/catalina.sh run
 Restart=on-failure
 
 [Install]
@@ -52,9 +53,13 @@ WantedBy=multi-user.target
 EOF
 
 # Reload systemd and start Tomcat
+echo "=== Step 6: Reload systemd and Start Tomcat ==="
 systemctl daemon-reload
-systemctl enable tomcat
-systemctl start tomcat
+systemctl enable --now tomcat
+
+echo "=== Done: Tomcat installation finished ==="
+
+######## Lines Above Installed Tomcat successfully #########
 
 # Add admin user to tomcat-users.xml
 sed -i '/<\/tomcat-users>/i \
